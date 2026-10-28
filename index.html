@@ -608,7 +608,7 @@ if(hit)render()});
    Sign-in, PIN storage and wrong-PIN limits are handled by Firebase Authentication.
    This page never sees or stores anyone's PIN, except while it is being typed. */
 const LOGO=document.querySelector('.hd img').src;
-let IDLE_MIN=15,lastAct=Date.now(),secLog=[],simsg='',siLast='',okmsg='',rpnote='',pins=null,busy='',unsub=[],last={},headUid='',app2=null;
+let alMine=null,alLoad=false,alMsg='',alOk='',IDLE_MIN=15,lastAct=Date.now(),secLog=[],simsg='',siLast='',okmsg='',rpnote='',pins=null,busy='',unsub=[],last={},headUid='',app2=null;
 const rnd=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return a};
 const r32=()=>{const a=rnd(4);return((a[0]<<24)|(a[1]<<16)|(a[2]<<8)|a[3])>>>0};
 const mkpin=()=>String(100000+r32()%900000);
@@ -652,7 +652,7 @@ if(d.red){const r=Q(d.red);return !!r&&((r.by==cur&&r.status=='pending')||(canAp
 if(d.rsave){const r=Q(d.rsave);return !!r&&((r.by==cur&&r.status=='pending')||(canApprove(m,r.kind)&&['pending','approved'].includes(r.status)))}
 if(d.link||d.rmf){const k=K(d.link||String(d.rmf).split(':')[0]);return !!k&&add(m,k.t)}
 if(d.wpr||d.wrs||d.wrestore)return isMod(m);
-if('pinchg' in d)return cur==real;
+if('pinchg' in d||'alset' in d||'alclr' in d)return cur==real;
 return true}
 function allowChange(t){const d=t.dataset,m=me(),R=byId(real),own=R&&R.r=='owner'&&cur==real,K=i=>tasks.find(k=>k.id==i);
 if(!real||screen!='app')return true;
@@ -682,7 +682,11 @@ const vLoading=()=>`<div class="si"><div class="sicard">${brand}<p class="mut">L
 async function doSignIn(){const raw=$('#lu').value.trim(),u=slug(raw),pin=$('#sipin').value;siLast=raw;simsg='';
 if(!u||!pin){simsg='Type your username and your PIN.';draw(1);return}
 const b=$('[data-signin]');if(b)b.disabled=true;
-try{await setPersistence(auth,$('#shared')&&$('#shared').checked?browserSessionPersistence:browserLocalPersistence);await signInWithEmailAndPassword(auth,u+DOM,pin)}
+try{await setPersistence(auth,$('#shared')&&$('#shared').checked?browserSessionPersistence:browserLocalPersistence);
+try{await signInWithEmailAndPassword(auth,u+DOM,pin)}
+catch(e1){if(['auth/too-many-requests','auth/network-request-failed'].includes(e1.code))throw e1;
+let real0='';try{const s=await getDoc(doc(db,'usernames',u));if(s.exists()&&typeof s.data().u=='string')real0=s.data().u}catch(e2){}
+if(!real0)throw e1;await signInWithEmailAndPassword(auth,real0+DOM,pin)}}
 catch(err){simsg=err.code=='auth/too-many-requests'?'Too many tries. Wait a few minutes before trying again, or ask an owner to reset your PIN.':err.code=='auth/network-request-failed'?'No internet connection. Try again.':'That username or PIN is not right.';draw(1)}}
 Object.assign(ICN,{'My account':'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c0-4 4-6 8-6s8 2 8 6','Sign out':'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9',Arrange:'M7 4v16M7 4L3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4',Bell:'M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0',Lock:'M5 11h14v10H5zM8 11V7a4 4 0 018 0v4'});
 function sideNav(ts){const o=navItems(ts),u=unread();let h='',rare=false;const mv=(i,n)=>`<span class="dgrip" data-grip="${i}" role="button" tabindex="0" aria-label="Drag to move ${n}. The up and down arrow keys also work." title="Drag to move">&#8942;&#8942;</span>`;
@@ -752,7 +756,7 @@ ${pins?`<div class="dbcard c12"><h3>Usernames and starting PINs</h3><div class="
 function vAcct(){const m=me(),self=cur==real,mt=(auth.currentUser&&auth.currentUser.metadata)||{},mine=secLog.filter(e=>e.who==m.n).slice(0,15);
 return `<h2>My account</h2><div class="dbgrid"><div class="dbcard c5"><h3>Profile</h3><div class="dbkv"><span>Name</span><b>${esc(m.n)}</b><span>Role</span><b>${esc(label(m))}</b><span>Subteam</span><b>${esc(sub(m))}</b>${self?`<span>Username</span><b>${esc(myUser())}</b><span>Signed in</span><b>${mt.lastSignInTime?when(new Date(mt.lastSignInTime).getTime()):'Now'}</b><span>Account created</span><b>${mt.creationTime?fd(dstr0(new Date(mt.creationTime).getTime())):''}</b>`:''}</div><p class="dbnote">If you see a sign-in you do not recognize, change your PIN and tell an owner.</p><button data-signout>Sign out</button></div>
 <div class="dbcard c7"><h3>Change my PIN</h3>${self?`<div class="dbform"><label>Current PIN<input id="pin0" class="pin" type="password" autocomplete="current-password" maxlength="64"></label><label>New PIN<input id="pin1" class="pin" type="password" autocomplete="new-password" maxlength="64"></label><label>New PIN again<input id="pin2" class="pin" type="password" autocomplete="new-password" maxlength="64"></label><button class="sel" data-pinchg>Change PIN</button></div><p class="dbnote">${privileged(m.r)?'Your role needs at least 10 characters.':'Use at least 6 characters. Six digits is fine.'} Avoid repeated or counting characters like 111111 or 123456. Never share your PIN, even with a lead.</p>`:'<p class="mut">You are acting as someone else. Go back to your own account to change a PIN.</p>'}</div>
-<div class="dbcard c12"><h3>My activity on this device</h3>${mine.map(e=>`<div class="dbitem"><span>${esc(e.text)}</span><span class="mut">${when(e.at)}</span></div>`).join('')||'<p class="mut">Nothing yet.</p>'}</div></div>`}
+${self?aliasCard():''}<div class="dbcard c12"><h3>My activity on this device</h3>${mine.map(e=>`<div class="dbitem"><span>${esc(e.text)}</span><span class="mut">${when(e.at)}</span></div>`).join('')||'<p class="mut">Nothing yet.</p>'}</div></div>`}
 document.addEventListener('input',e=>{if(e.target.id=='wbody'||e.target.id=='wtt')wkLive()});
 /* ===================== Wiki ===================== */
 const THEMES={navy:'#173a63',orange:'#c2410c',gold:'#a16207',blue:'#2563eb',green:'#047857',purple:'#7e22ce',red:'#dc2626',teal:'#0e7490',indigo:'#4338ca',pink:'#be185d',slate:'#475569'};
@@ -968,7 +972,7 @@ else if('pinchg' in d){const a=$('#pin0').value,n1=$('#pin1').value,n2=$('#pin2'
 if(!a)msg='Type your current PIN.';else if(bad)msg=bad;else if(n1!=n2)msg='The two new PINs do not match.';else if(n1==a)msg='Choose a PIN that is different from your current one.';
 else{try{await reauthenticateWithCredential(auth.currentUser,EmailAuthProvider.credential(auth.currentUser.email,a))}catch(err){msg=err.code=='auth/too-many-requests'?'Too many tries. Wait a few minutes before trying again.':'Your current PIN is not right.';secEv('Wrong PIN entered while changing PIN',R);draw(1);return}
 await updatePassword(auth.currentUser,n1);okmsg='Your PIN was changed.';secEv('Changed PIN',R);ev('Changed their own PIN')}}
-else if('pinreset' in d){const id=$('#rpwho').value;if(id&&id!=real){busy='Working...';rpnote='';draw(1);await reissue(id);busy='';secEv('PIN reset by '+R.n,byId(id)||R);ev('Reset a PIN for '+(byId(id)||{n:'someone'}).n)}}
+else if('alset' in d){await aliasSave(false);return}else if('alclr' in d){await aliasSave(true);return}else if('pinreset' in d){const id=$('#rpwho').value;if(id&&id!=real){busy='Working...';rpnote='';draw(1);await reissue(id);busy='';secEv('PIN reset by '+R.n,byId(id)||R);ev('Reset a PIN for '+(byId(id)||{n:'someone'}).n)}}
 else if('actgo' in d){const p=byId($('#actwho').value),pin=$('#actpin').value;
 if(!pin)msg='Type your own PIN first.';else{try{app2=app2||initializeApp(cfg,'second');const a2=getAuth(app2);await signInWithEmailAndPassword(a2,auth.currentUser.email,pin);await fbSignOut(a2)}catch(err){msg=err.code=='auth/too-many-requests'?'Too many tries. Wait a few minutes before trying again.':'That is not your PIN.';secEv('Wrong PIN entered to act as someone',R);draw(1);return}
 if(p){cur=p.id;tab='Dashboard';secEv('Started acting as '+p.n,R);ev('Started acting as '+p.n)}}}
@@ -1079,8 +1083,8 @@ wiping=true;wipeMsg='Checking your PIN...';draw(1);
 try{await reauthenticateWithCredential(auth.currentUser,EmailAuthProvider.credential(auth.currentUser.email,pin));await auth.currentUser.getIdToken(true)}
 catch(err){wiping=false;wipeMsg=err.code=='auth/too-many-requests'?'Too many tries. Wait a few minutes. Nothing was erased.':'That PIN is not right. Nothing was erased.';draw(1);return}
 wipeMsg='Erasing. Do not close this page...';draw(1);
-try{const cols=['tasks','reqs','events','notes','log','wins','wiki','wrev','attendance','days','avail','retro','ritems','rounds','season','users'];
-for(const c of cols){const sn=await getDocs(collection(db,c));const ds=sn.docs.filter(x=>!(c=='users'&&x.id==real));for(let i=0;i<ds.length;i+=400){const bt=writeBatch(db);ds.slice(i,i+400).forEach(x=>bt.delete(x.ref));await bt.commit()}}
+try{const cols=['tasks','reqs','events','notes','log','wins','wiki','wrev','attendance','days','avail','retro','ritems','rounds','season','usernames','users'];
+for(const c of cols){const sn=await getDocs(collection(db,c));const ds=sn.docs.filter(x=>!((c=='users'&&x.id==real)||(c=='usernames'&&x.data().uid==real)));for(let i=0;i<ds.length;i+=400){const bt=writeBatch(db);ds.slice(i,i+400).forEach(x=>bt.delete(x.ref));await bt.commit()}}
 const cs=await getDoc(doc(db,'config','main')),c0=cs.exists()?cs.data():{};await setDoc(doc(db,'config','main'),{rule:c0.rule||2,idle:c0.idle||15});
 wiping=false;wipeStep=0;wtv='';wipeMsg='Everything was erased. Load your roster from the box above to start again.';setTimeout(()=>{ev('Erased all data on the site');render()},1200);draw(1)}
 catch(err){wiping=false;wipeMsg='Stopped part way: '+friendly(err)+' Some data may be gone. Press the button again to finish.';draw(1)}});
@@ -1152,5 +1156,14 @@ all.forEach((p,i)=>{const z=i%2?'F4F7FB':'FFFFFF',n=ds.filter(d=>(att[d]||[]).in
 rows2.push({h:22,cells:[{v:p.n,s:{...B1,b:1,bg:z,sz:12}},{v:role(p),s:{...B1,bg:z}},{v:sub(p),s:{...B1,bg:TC[sub(p)]||z}},...ds.map(d=>(att[d]||[]).includes(p.id)?{v:'✓',s:{bd:1,al:'center',b:1,c:'1B7A4A',bg:'D4EFD9',sz:13}}:{v:'',s:{bd:1,al:'center',bg:'FBF1F1'}}),{v:n,s:{bd:1,al:'center',b:1,bg:z}},{v:nc?n/nc:0,s:{bd:1,al:'center',b:1,bg:z,nf:9}}]})});
 const rc=XW.colL(3+nc+1),s2={name:'All dates',cols:[32,30,18,...ds.map(()=>9),11,10],rows:rows2,merges:['A1:'+XW.colL(last-1)+'1','A2:'+XW.colL(last-1)+'2'],freeze:{r:4,c:1},filter:nc||all.length?'A4:'+XW.colL(last-1)+(4+all.length):'',cf:all.length?`<conditionalFormatting sqref="${rc}5:${rc}${4+all.length}"><cfRule type="colorScale" priority="1"><colorScale><cfvo type="num" val="0"/><cfvo type="num" val="0.5"/><cfvo type="num" val="1"/><color rgb="FFF4B6B6"/><color rgb="FFFFF2B3"/><color rgb="FFA8DDB5"/></colorScale></cfRule></conditionalFormatting>`:''};
 const blob=XW.book([s1,s2]),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='saints-1899-attendance-'+day+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+
+async function loadAlias(){if(alLoad||!real)return;alLoad=true;try{const s=await getDocs(query(collection(db,'usernames'),where('uid','==',real)));alMine=s.docs.length?s.docs[0].id:''}catch(e){alMine=''}alLoad=false;draw(1)}
+let alFor='';function aliasCard(){if(alFor!=real){alFor=real;alMine=null;alMsg='';alOk=''}if(alMine===null){loadAlias();return '<div class="dbcard c12"><h3>Easy username</h3><p class="mut">Loading...</p></div>'}
+return `<div class="dbcard c12"><h3>Easy username</h3><p class="dbnote">Pick a short name that is easy to remember. You can sign in with it instead of the long username. Your PIN stays the same.</p><div class="dbform"><label>Easy username<input id="alin" value="${esc(alMine)}" maxlength="20" placeholder="for example hamza7" autocomplete="off" autocapitalize="none"></label><button class="sel" data-alset>Save</button>${alMine?'<button data-alclr>Remove it</button>':''}</div>${alMsg?`<div class="dbmsg" role="alert">${esc(alMsg)}</div>`:''}${alOk?`<div class="dbmsg ok" role="status">${esc(alOk)}</div>`:''}<p class="dbnote">4 to 20 letters, numbers or dashes. It cannot start with "saint". Nobody else can use the same one.</p></div>`}
+async function aliasSave(clear){alMsg='';alOk='';const raw=clear?'':$('#alin').value.trim().toLowerCase(),a=raw.replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'');
+if(!clear){if(a.length<4||a.length>20)alMsg='Use 4 to 20 letters or numbers.';else if(a.startsWith('saint'))alMsg='It cannot start with "saint". Try another.';else if(a==alMine)alOk='That is already your easy username.'}
+if(alMsg||alOk){draw(1);return}
+try{const b=writeBatch(db);if(alMine)b.delete(doc(db,'usernames',alMine));if(!clear)b.set(doc(db,'usernames',a),{u:myUser(),uid:real});await b.commit();alMine=clear?'':a;alOk=clear?'Removed. Use your original username to sign in.':'Saved. You can now sign in with "'+a+'".';secEv(clear?'Removed easy username':'Set an easy username',byId(real)||{n:myName})}
+catch(e){alMsg=e.code=='permission-denied'?'That one is taken or not allowed. Try another.':'Could not save. Check your connection and try again.'}draw(1)}
 
 </script></body></html>
