@@ -1032,4 +1032,6 @@ document.addEventListener('pointerdown',e=>{if(el)return;const img=e.target.clos
 addEventListener('resize',()=>{if(!el||held)return;x=Math.max(R,Math.min(W()-R,x));y=Math.min(H()-R,y);put();if(!raf){last=performance.now();raf=requestAnimationFrame(tick)}});
 })();
 
+(()=>{let n=0,t0=0;document.addEventListener('click',e=>{const h=e.target.closest&&e.target.closest('h1');if(!h||!/^Saints 1899 Wiki/.test(h.textContent))return;const t=Date.now();if(t-t0>1500)n=0;t0=t;if(++n<7)return;n=0;const c=document.createElement('div');c.textContent='Wiki idea by Alex Ferlay';c.style.cssText='position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(20,45,80,.92);color:#fff;font:600 13px Inter,system-ui,sans-serif;padding:8px 14px;border-radius:8px;z-index:99998;opacity:0;transition:opacity .5s;pointer-events:none';document.body.appendChild(c);requestAnimationFrame(()=>c.style.opacity='1');setTimeout(()=>{c.style.opacity='0';setTimeout(()=>c.remove(),600)},4500)})})();
+
 </script></body></html>
