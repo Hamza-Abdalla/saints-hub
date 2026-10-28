@@ -697,7 +697,7 @@ let html=V[tab](),title=esc(tab);const mm=html.match(/^\s*<h2>([\s\S]*?)<\/h2>/)
 const hr=new Date().getHours(),sub=tab=='Dashboard'?`${hr<12?'Good morning':hr<18?'Good afternoon':'Good evening'}, ${esc(me().n)}. ${fl(TODAY)}`:tab=='Wiki'?"The team's shared notes. Anyone can start or improve a page.":fl(TODAY);
 $('#app').innerHTML=shell(ts,title,sub,(msg?`<div class="dbmsg" role="alert">${esc(msg)}</div>`:'')+(okmsg?`<div class="dbmsg ok" role="status">${esc(okmsg)}</div>`:'')+(tab!='Dashboard'?helpBanner():'')+html);
 document.querySelectorAll('#app input:not([type]),#app input[type=text],#app textarea').forEach(el=>{if(el.maxLength<0)el.maxLength=el.tagName=='TEXTAREA'?(el.id=='wbody'?20000:2000):200})}
-function draw(f){TODAY=new Date().toLocaleDateString('en-CA');const x=document.activeElement;if(!f&&x&&x.closest&&x.closest('#app')&&['INPUT','SELECT','TEXTAREA'].includes(x.tagName))return;renderApp()}
+function draw(f){TODAY=new Date().toLocaleDateString('en-CA');const x=document.activeElement;if(!f&&x&&x.closest&&x.closest('#app')&&['INPUT','SELECT','TEXTAREA'].includes(x.tagName))return;const sd=document.querySelector('.dbside'),sy=sd?sd.scrollTop:0;renderApp();const sn=document.querySelector('.dbside');if(sn&&sy)sn.scrollTop=sy}
 function render(){draw(1);syncOut()}
 /* ===================== Dashboard ===================== */
 function vDash(){const m=me(),ts=tabs(),ll=people.filter(isLead),my=tasks.filter(k=>k.who==cur),openN=my.filter(k=>k.s!='done').length,blk=my.filter(k=>k.s=='blocked').length,w=m.ti=='Head mentor'?wins.filter(x=>x.toHead):wins,ns=notes.filter(n=>n.to==cur).sort((a,b)=>b.at-a.at),open=ns.filter(n=>!n.read&&!closed(n)),ms=nextMeets(3),all=cnt(tasks),ord={blocked:0,progress:1,todo:2,done:3};
