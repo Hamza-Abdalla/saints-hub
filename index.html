@@ -941,17 +941,42 @@ if(hit)render()});
 const dstr=ms=>new Date(ms).toLocaleDateString('en-CA');
 const getXL=()=>XLp||(XLp=import('https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs'));
 async function logsFor(a,b){const d0=new Date(a+'T00:00:00'),d1=new Date(b+'T00:00:00');d1.setDate(d1.getDate()+1);const q=await getDocs(query(collection(db,'log'),where('at','>=',d0.getTime()),where('at','<',d1.getTime()),orderBy('at')));return q.docs.map(d=>({id:d.id,...san(d.data())}))}
-async function buildXlsx(day,logs){const XL=await getXL(),wb=XL.utils.book_new(),pres=att[day]||[],all=people.filter(p=>!isMentor(p)).sort((a,b)=>a.n.localeCompare(b.n)),here=all.filter(p=>pres.includes(p.id)).length,upd=tasks.filter(k=>k.didOn==day),dl=logs.filter(e=>dstr(e.at)==day).sort((a,b)=>a.at-b.at),tk=id=>(tasks.find(k=>k.id==id)||{}).x||'';
-const add=(name,rows,w,nf)=>{const ws=XL.utils.aoa_to_sheet(rows);ws['!cols']=w.map(x=>({wch:x}));if(!nf&&rows.length>1)ws['!autofilter']={ref:XL.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:w.length-1}})};XL.utils.book_append_sheet(wb,ws,name)};
-add('Summary',[['Saints 1899 Team Hub records',''],['Date',fl(day)],['Downloaded',new Date().toLocaleString()],['Attendance recorded',att[day]?'Yes':'No'],['People present',here],['People absent',att[day]?all.length-here:''],['Tasks with a daily update on this date',upd.length],['Tasks blocked right now',tasks.filter(k=>k.s=='blocked').length],['Changes recorded on this date',dl.length]],[40,40],1);
-add('Attendance',[['Date','Full name','Role','Subteam','Attendance']].concat(all.map(p=>[day,p.n,p.ti||RL[p.r],p.t||'',att[day]?(pres.includes(p.id)?'Present':'Absent'):'No record'])),[12,28,26,16,14]);
-add('Task updates',[['Section','Task','Assigned to','Status','Due date','What was done','Plan for next meeting','Last change']].concat(upd.map(k=>[k.t,k.x,k.who?nameOf(k.who):'Unassigned',SL[k.s],k.due||'',k.did||'',k.plan||'',k.lc?k.lc.text+' ('+k.lc.by+')':''])),[14,32,24,20,12,50,40,40]);
-add('All tasks',[['Section','Task','Assigned to','Status','Days left','Due date','Date of last update','What was done','Plan for next meeting','Asked for help','Last change','Changed by','Changed at']].concat(tasks.map(k=>[k.t,k.x,k.who?nameOf(k.who):'Unassigned',SL[k.s],k.s=='progress'?k.d:'',k.due||'',k.didOn||'',k.did||'',k.plan||'',(k.help||[]).map(h=>nameOf(h.id)).join(', '),k.lc?k.lc.text:'',k.lc?k.lc.by:'',k.lc?new Date(k.lc.at).toLocaleString():''])),[14,32,24,20,10,12,14,50,40,28,40,24,22]);
-add('Change history',[['Time','Who','What','Task']].concat(dl.map(e=>[new Date(e.at).toLocaleTimeString(),e.by,e.text,tk(e.tid)])),[14,30,60,32]);
-add('Mentors',[['Mentor','Can mentor from','Until']].concat(Object.keys(av[day]||{}).map(i=>[nameOf(i),av[day][i].from,av[day][i].to])),[28,16,12]);
-add('Events',[['Event','Time','Details','Added by']].concat(events.filter(e=>e.date==day).map(e=>[e.title,e.time||'',e.plan||'',e.by||''])),[28,16,60,24]);
-add('Parts requests',[['Item','Vendor','Subteam','Type','Requested by','Priority','Quantity','Unit cost','Item cost','Tax %','Tax','Shipping','Total cost','Link','Order by','Needed by','Status','Delivery notes']].concat(reqs.map(r=>[r.item,r.vendor||'',r.sub||'',REQKIND[r.kind]||'',nameOf(r.by),r.prio,r.qty||'',r.unit==null?'':+r.unit,r.icost==null?'':+r.icost,r.taxp==null?'':+r.taxp,r.tax==null?'':+r.tax,r.ship==null?'':+r.ship,+r.cost||0,r.link||'',r.orderBy||'',r.needBy||'',RS[r.status]||r.status,r.note||''])),[32,18,14,30,24,10,9,10,10,8,9,9,12,40,12,12,30,40]);
-XL.writeFile(wb,'saints-1899-records-'+day+'.xlsx')}
+async function buildXlsx(day,logs){const pres=att[day]||[],all=people.filter(p=>!isMentor(p)).sort((a,b)=>a.n.localeCompare(b.n)),here=all.filter(p=>pres.includes(p.id)).length,rec=!!att[day],upd=tasks.filter(k=>k.didOn==day),dl=logs.filter(e=>dstr(e.at)==day).sort((a,b)=>a.at-b.at),tk=id=>(tasks.find(k=>k.id==id)||{}).x||'',
+NAVY='17375E',long=new Date(day+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}),
+T1={b:1,sz:22,c:'FFFFFF',bg:NAVY,al:'left'},T2={sz:13,c:'FFFFFF',bg:'2B5C93',al:'left'},bl=(n,s)=>Array.from({length:n},()=>({v:'',s})),
+H=t=>({v:t,s:{b:1,c:'FFFFFF',bg:NAVY,al:'center',bd:1,sz:12,wrap:1}}),
+STC={done:{bg:'D4EFD9',c:'1B7A4A'},blocked:{bg:'FAD7D7',c:'C62828'},progress:{bg:'DDEBF7',c:'1F5FA8'},todo:{bg:'EEF1F5',c:'4A5568'}},
+RSC={pending:{bg:'FFF2CC',c:'8A6100'},approved:{bg:'D4EFD9',c:'1B7A4A'},rejected:{bg:'FAD7D7',c:'C62828'},ordered:{bg:'DDEBF7',c:'1F5FA8'},delegated:{bg:'E4DFEC',c:'5B3F8C'},inprogress:{bg:'DDEBF7',c:'1F5FA8'},withdrawn:{bg:'EEF1F5',c:'4A5568'}},
+// cols: [{t:header,w:width,wrap?,al?,nf?,col?:row=>{bg,c}}]; data: array of arrays
+sheet=(name,title,note,cols,data,empty)=>{const n=cols.length,rows=[{h:38,cells:[{v:'  '+title,s:T1},...bl(n-1,T1)]},{h:24,cells:[{v:'  '+note,s:T2},...bl(n-1,T2)]},{h:10,cells:bl(n)},{h:30,cells:cols.map(c=>H(c.t))}];
+data.forEach((r,i)=>{const z=i%2?'F4F7FB':'FFFFFF';rows.push({cells:cols.map((c,j)=>{const v=r[j],x=c.col&&c.col(r,v);return{v:v==null?'':v,s:{bd:1,bg:z,al:c.al||'left',wrap:c.wrap?1:0,nf:c.nf||0,b:j==c.bold?1:0,...(x||{})}}})})});
+if(!data.length)rows.push({h:26,cells:[{v:'  '+(empty||'Nothing recorded.'),s:{c:'6B7686',al:'left'}},...bl(n-1)]});
+return{name,cols:cols.map(c=>c.w),rows,merges:['A1:'+XW.colL(n-1)+'1','A2:'+XW.colL(n-1)+'2'],freeze:{r:4},filter:data.length?'A4:'+XW.colL(n-1)+(4+data.length):''}},
+G={bg:'E5F4E4',c:'1B7A4A',al:'center'},R={bg:'FBEBEB',c:'C62828',al:'center'},Bl={bg:'E7F1FB',c:NAVY,al:'center'},Am={bg:'FFF2CC',c:'8A6100',al:'center'},Pu={bg:'E4DFEC',c:'5B3F8C',al:'center'};
+// Summary: three rows of two-column tiles
+const blocked=tasks.filter(k=>k.s=='blocked').length;
+const sm=[{h:38,cells:[{v:'  Saints 1899 Team Hub records',s:T1},...bl(5,T1)]},{h:24,cells:[{v:'  '+long,s:T2},...bl(5,T2)]},{h:10,cells:bl(6)}];
+const trio=(items)=>{sm.push({h:22,cells:items.flatMap(([l,v,S])=>[{v:l,s:{...S,b:1,sz:11}},{v:'',s:S}])});sm.push({h:44,cells:items.flatMap(([l,v,S])=>[{v:v,s:{...S,b:1,sz:28}},{v:'',s:S}])});sm.push({h:12,cells:bl(6)})};
+trio([['PRESENT',rec?here:'-',G],['ABSENT',rec?all.length-here:'-',R],['ATTENDANCE',rec&&all.length?Math.round(here/all.length*100)+'%':'-',Bl]]);
+trio([['TASK UPDATES TODAY',upd.length,Bl],['TASKS BLOCKED NOW',blocked,blocked?R:G],['CHANGES TODAY',dl.length,Pu]]);
+const info=(k,v)=>sm.push({h:22,cells:[{v:'  '+k,s:{b:1,bg:'F4F7FB',bd:1,al:'left'}},{v:'',s:{bg:'F4F7FB',bd:1}},{v:v,s:{bd:1,al:'left'}},...bl(3,{bd:1})]});
+info('Date',fl(day));info('Downloaded',new Date().toLocaleString());info('Attendance recorded',rec?'Yes':'No');info('Open parts requests',reqs.filter(r=>['pending','approved','ordered','delegated','inprogress'].includes(r.status)).length);
+const s0={name:'Summary',cols:[18,12,18,12,18,12],rows:sm,merges:['A1:F1','A2:F2',...[4,7].flatMap(r=>['A'+r+':B'+r,'C'+r+':D'+r,'E'+r+':F'+r,'A'+(r+1)+':B'+(r+1),'C'+(r+1)+':D'+(r+1),'E'+(r+1)+':F'+(r+1)]),...[10,11,12,13].map(r=>'A'+r+':B'+r),...[10,11,12,13].map(r=>'C'+r+':F'+r)]};
+const sub=p=>p.t||(p.g=='eng'?'Engineering':p.g=='comm'?'Communications':'');
+const upCols=[{t:'Section',w:16},{t:'Task',w:36,wrap:1,bold:1},{t:'Assigned to',w:24},{t:'Status',w:22,al:'center'},{t:'Due date',w:12,al:'center'},{t:'What was done',w:50,wrap:1},{t:'Plan for next meeting',w:40,wrap:1},{t:'Last change',w:40,wrap:1}];
+const sh=[s0,attSheets(day,1)[0],null];
+// status colour needs the raw status
+sh[2]=(()=>{const cols=upCols.map(c=>c.t=='Status'?{...c,col:(r)=>{const k=r.__s;return k&&STC[k]?{...STC[k],al:'center',b:1}:null}}:c),data=upd.map(k=>{const r=[k.t,k.x,k.who?nameOf(k.who):'Unassigned',SL[k.s],k.due||'',k.did||'',k.plan||'',k.lc?k.lc.text+' ('+k.lc.by+')':''];r.__s=k.s;return r});return sheet('Task updates','Task updates','Tasks with a daily update on this date.',cols,data,'No task updates on this date.')})();
+const allCols=[{t:'Section',w:16},{t:'Task',w:36,wrap:1,bold:1},{t:'Assigned to',w:24},{t:'Status',w:22,al:'center',col:r=>r.__s&&STC[r.__s]?{...STC[r.__s],al:'center',b:1}:null},{t:'Days left',w:10,al:'center'},{t:'Due date',w:12,al:'center'},{t:'Last update',w:14,al:'center'},{t:'What was done',w:50,wrap:1},{t:'Plan for next meeting',w:40,wrap:1},{t:'Asked for help',w:28,wrap:1},{t:'Last change',w:40,wrap:1},{t:'Changed by',w:24},{t:'Changed at',w:22}];
+sh.push(sheet('All tasks','All tasks','Every task right now, colored by status.',allCols,tasks.map(k=>{const r=[k.t,k.x,k.who?nameOf(k.who):'Unassigned',SL[k.s],k.s=='progress'?k.d:'',k.due||'',k.didOn||'',k.did||'',k.plan||'',(k.help||[]).map(h=>nameOf(h.id)).join(', '),k.lc?k.lc.text:'',k.lc?k.lc.by:'',k.lc?new Date(k.lc.at).toLocaleString():''];r.__s=k.s;return r}),'No tasks yet.'));
+sh.push(sheet('Change history','Change history','Everything that changed on this date, in order.',[{t:'Time',w:14,al:'center'},{t:'Who',w:30,bold:1},{t:'What',w:60,wrap:1},{t:'Task',w:36,wrap:1}],dl.map(e=>[new Date(e.at).toLocaleTimeString(),e.by,e.text,tk(e.tid)]),'No changes recorded on this date.'));
+sh.push(sheet('Mentors','Mentors','Mentors who can help on this date.',[{t:'Mentor',w:28,bold:1},{t:'Can mentor from',w:18,al:'center'},{t:'Until',w:14,al:'center'}],Object.keys(av[day]||{}).map(i=>[nameOf(i),av[day][i].from,av[day][i].to]),'No mentors signed up for this date.'));
+sh.push(sheet('Events','Events','Events on this date.',[{t:'Event',w:30,bold:1,wrap:1},{t:'Time',w:16,al:'center'},{t:'Details',w:60,wrap:1},{t:'Added by',w:24}],events.filter(e=>e.date==day).map(e=>[e.title,e.time||'',e.plan||'',e.by||'']),'No events on this date.'));
+const $f='"$"#,##0.00',cur=x=>x==null||x===''?'':+x;
+sh.push(sheet('Parts requests','Parts requests','All requests, colored by where they are in the process.',[{t:'Item',w:32,wrap:1,bold:1},{t:'Vendor',w:18},{t:'Subteam',w:14},{t:'Type',w:30,wrap:1},{t:'Requested by',w:24},{t:'Priority',w:10,al:'center',col:r=>({High:{bg:'FAD7D7',c:'C62828',b:1},Medium:{bg:'FFF2CC',c:'8A6100',b:1},Low:{bg:'D4EFD9',c:'1B7A4A',b:1}})[r[5]]},{t:'Qty',w:8,al:'center'},{t:'Unit cost',w:12,nf:7,al:'right'},{t:'Item cost',w:12,nf:7,al:'right'},{t:'Tax %',w:8,al:'center'},{t:'Tax',w:11,nf:7,al:'right'},{t:'Shipping',w:11,nf:7,al:'right'},{t:'Total cost',w:13,nf:7,al:'right',col:()=>({b:1})},{t:'Link',w:40},{t:'Order by',w:12,al:'center'},{t:'Needed by',w:12,al:'center'},{t:'Status',w:30,wrap:1,al:'center',col:r=>r.__s&&RSC[r.__s]?{...RSC[r.__s],b:1}:null},{t:'Delivery notes',w:40,wrap:1}],
+reqs.map(r=>{const x=[r.item,r.vendor||'',r.sub||'',REQKIND[r.kind]||'',nameOf(r.by),r.prio,r.qty||'',cur(r.unit),cur(r.icost),r.taxp==null?'':+r.taxp,cur(r.tax),cur(r.ship),+r.cost||0,r.link||'',r.orderBy||'',r.needBy||'',RS[r.status]||r.status,r.note||''];x.__s=r.status;return x}),'No parts requests yet.'));
+const blob=XW.book(sh),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='saints-1899-records-'+day+'.xlsx';document.body.appendChild(a);a.click();await new Promise(r=>setTimeout(r,400));URL.revokeObjectURL(a.href);a.remove()}
+
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!b.dataset.exp)return;const x=b.dataset.exp;
 try{msg='Preparing the Excel file...';draw(1);
 if(x=='day'){const day=$('#expd').value||TODAY;expd=day;await buildXlsx(day,await logsFor(day,day));msg=''}
@@ -1133,7 +1158,7 @@ files=[{name:'[Content_Types].xml',data:U(H+'<Types xmlns="http://schemas.openxm
 {name:'xl/styles.xml',data:U(st)}].concat(sx.map((x,i)=>({name:`xl/worksheets/sheet${i+1}.xml`,data:U(x)})));
 return zip(files)}
 return{book,colL}})();
-function buildAttXlsx(day){const pres=att[day]||[],all=people.filter(p=>!isMentor(p)).sort((a,b)=>a.n.localeCompare(b.n)),rec=!!att[day],here=all.filter(p=>pres.includes(p.id)).length,away=rec?all.length-here:0,
+function attSheets(day,one){const pres=att[day]||[],all=people.filter(p=>!isMentor(p)).sort((a,b)=>a.n.localeCompare(b.n)),rec=!!att[day],here=all.filter(p=>pres.includes(p.id)).length,away=rec?all.length-here:0,
 sub=p=>p.t||(p.g=='eng'?'Engineering':p.g=='comm'?'Communications':''),role=p=>p.ti||RL[p.r],
 NAVY='17375E',B1={bd:1,al:'left'},TC={Mechanical:'FBE3D6',Electrical:'FFF2CC',Programming:'DDEBF7',Business:'E4DFEC',Imagery:'E2F0D9',Engineering:'DDEBF7',Communications:'E4DFEC'},
 H=t=>({v:t,s:{b:1,c:'FFFFFF',bg:NAVY,al:'center',bd:1,sz:12}}),
@@ -1149,13 +1174,14 @@ rows1.push({h:26,cells:[H('#'),H('Full name'),H('Role'),H('Subteam'),H('Status')
 all.forEach((p,i)=>{const z=i%2?'F4F7FB':'FFFFFF',ok=pres.includes(p.id),st=!rec?{v:'No record',s:{bd:1,al:'center',c:'6B7686',bg:'EEF1F5'}}:ok?{v:'Present',s:{bd:1,al:'center',b:1,c:'1B7A4A',bg:'D4EFD9'}}:{v:'Absent',s:{bd:1,al:'center',b:1,c:'C62828',bg:'FAD7D7'}};
 rows1.push({h:22,cells:[{v:i+1,s:{bd:1,al:'center',c:'6B7686',bg:z}},{v:p.n,s:{...B1,b:1,bg:z,sz:12}},{v:role(p),s:{...B1,bg:z}},{v:sub(p),s:{...B1,bg:TC[sub(p)]||z}},st]})});
 const s1={name:'Attendance',cols:[6,32,30,18,14],rows:rows1,merges:['A1:E1','A2:E2','A4:B4','A5:B5','D4:E4','D5:E5'],freeze:{r:7},filter:'A7:E'+(7+all.length)};
-const ds=Object.keys(att).sort(),nc=ds.length,last=3+nc+2;
+if(one)return[s1];const ds=Object.keys(att).sort(),nc=ds.length,last=3+nc+2;
 const T3=(c)=>({b:1,sz:22,c:'FFFFFF',bg:NAVY,al:'left'}),rows2=[{h:38,cells:[{v:'  Every date at a glance',s:T1},...bl(last-1,T1)]},{h:24,cells:[{v:'  A check mark means the person was here. The last two columns count them up.',s:T2},...bl(last-1,T2)]},{h:10,cells:bl(last)}];
 rows2.push({h:34,cells:[H('Full name'),H('Role'),H('Subteam'),...ds.map(d=>({v:new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}),s:{b:1,c:'FFFFFF',bg:NAVY,al:'center',bd:1,sz:11,wrap:1}})),H('Days here'),H('Rate')]});
 all.forEach((p,i)=>{const z=i%2?'F4F7FB':'FFFFFF',n=ds.filter(d=>(att[d]||[]).includes(p.id)).length;
 rows2.push({h:22,cells:[{v:p.n,s:{...B1,b:1,bg:z,sz:12}},{v:role(p),s:{...B1,bg:z}},{v:sub(p),s:{...B1,bg:TC[sub(p)]||z}},...ds.map(d=>(att[d]||[]).includes(p.id)?{v:'✓',s:{bd:1,al:'center',b:1,c:'1B7A4A',bg:'D4EFD9',sz:13}}:{v:'',s:{bd:1,al:'center',bg:'FBF1F1'}}),{v:n,s:{bd:1,al:'center',b:1,bg:z}},{v:nc?n/nc:0,s:{bd:1,al:'center',b:1,bg:z,nf:9}}]})});
 const rc=XW.colL(3+nc+1),s2={name:'All dates',cols:[32,30,18,...ds.map(()=>9),11,10],rows:rows2,merges:['A1:'+XW.colL(last-1)+'1','A2:'+XW.colL(last-1)+'2'],freeze:{r:4,c:1},filter:nc||all.length?'A4:'+XW.colL(last-1)+(4+all.length):'',cf:all.length?`<conditionalFormatting sqref="${rc}5:${rc}${4+all.length}"><cfRule type="colorScale" priority="1"><colorScale><cfvo type="num" val="0"/><cfvo type="num" val="0.5"/><cfvo type="num" val="1"/><color rgb="FFF4B6B6"/><color rgb="FFFFF2B3"/><color rgb="FFA8DDB5"/></colorScale></cfRule></conditionalFormatting>`:''};
-const blob=XW.book([s1,s2]),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='saints-1899-attendance-'+day+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+return[s1,s2]}
+function buildAttXlsx(day){const blob=XW.book(attSheets(day)),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='saints-1899-attendance-'+day+'.xlsx';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
 
 async function loadAlias(){if(alLoad||!real)return;alLoad=true;try{const s=await getDocs(query(collection(db,'usernames'),where('uid','==',real)));alMine=s.docs.length?s.docs[0].id:''}catch(e){alMine=''}alLoad=false;draw(1)}
 let alFor='';function aliasCard(){if(alFor!=real){alFor=real;alMine=null;alMsg='';alOk=''}if(alMine===null){loadAlias();return '<div class="dbcard c12"><h3>Easy username</h3><p class="mut">Loading...</p></div>'}
