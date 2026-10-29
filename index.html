@@ -389,7 +389,7 @@ return '<h2>My tasks</h2><p class="mut">Your tasks are listed by due date, soone
 function vAdd(){const m=me(),own=m.r=='owner',adv=own||m.r=='mentor',roles=own?[['member','Member'],['lead','Lead'],['captain','Captain'],['mentor','Mentor'],['core','Core admin'],['admin','Admin']]:m.r=='mentor'?[['member','Member'],['lead','Lead'],['captain','Captain'],['mentor','Mentor'],['admin','Admin']]:[['member','Member'],['lead','Lead'],['captain','Captain']];
 return `<h2>Add people</h2><section><div class="row"><input id="pn" placeholder="Full name"><select id="pr">${roles.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('')}</select><select id="pt">${T.map(t=>`<option>${t}</option>`).join('')}</select>${adv?`<select id="pg"><option value="eng">Engineering admin</option><option value="comm">Communications admin</option></select><input id="ptt" placeholder="Title">`:''}<button data-addp>Add person</button></div><p class="mut">Subteam applies to members and leads. The admin group applies to admins. For mentors, type Engineering mentor or General mentor as the title.</p>${note?`<p><b>${esc(note)}</b></p>`:''}</section>`}
 function vLog(){const k=Object.keys(att).sort().reverse(),all=people.filter(p=>!isMentor(p));
-return `<h2>Attendance log</h2><p class="mut">One record per day, newest first. Records are kept permanently. Only the head mentor can delete one.</p>`+(k.map(d=>{const pr=att[d].map(i=>byId(i)).filter(Boolean),ab=all.filter(p=>!att[d].includes(p.id));
+return `<h2>Attendance log</h2><p class="mut">One record per day, newest first. Records are kept permanently. Only the head mentor can delete one.</p>`+attExpSec()+(k.map(d=>{const pr=att[d].map(i=>byId(i)).filter(Boolean),ab=all.filter(p=>!att[d].includes(p.id));
 return `<details class="card" ${ask==d||d==k[0]?'open':''}><summary><b>${fl(d)}</b>: ${ab.length} did not attend, ${pr.length} present</summary><div class="absent"><h3>Did not attend (${ab.length})</h3>${ab.map(p=>`<div>${esc(p.n)} <span class="mut">${esc(label(p))}</span></div>`).join('')||'<p>Everyone attended.</p>'}</div><p class="mut"><b>Present (${pr.length}):</b> ${pr.map(p=>esc(p.n)).join(', ')||'none'}</p>`+(real==headUid?(ask==d?`<p>Delete this record forever?</p><button data-dok="${d}">Yes, delete it</button> <button data-dno>Cancel</button>`:`<button data-dl="${d}">Delete this record</button>`):'')+'</details>'}).join('')||'<p>No records yet. They appear after the first check-in.</p>')}
 let dsel='',dpage='',dx=3,msg='';
 const SL={done:'Done',progress:'In Progress',todo:'Not Started',blocked:'Blocked - Need Help'};
@@ -982,7 +982,7 @@ const blob=XW.book(sh),a=document.createElement('a');a.href=URL.createObjectURL(
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!b.dataset.exp)return;const x=b.dataset.exp;
 try{msg='Preparing the Excel file...';draw(1);
 if(x=='day'){const day=$('#expd').value||TODAY;expd=day;await buildXlsx(day,await logsFor(day,day));msg=''}
-else if(x=='att'){const day=$('#expa').value||TODAY;expd=day;buildAttXlsx(day);msg=''}else if(x=='all'){const ds=Object.keys(att).sort();if(!ds.length)msg='There are no attendance dates yet.';else{const logs=await logsFor(ds[0],ds[ds.length-1]);for(const dd of ds){await buildXlsx(dd,logs);await new Promise(r=>setTimeout(r,500))}msg=''}}
+else if(x=='att'){const day=((b.closest('section')||document).querySelector('input[id^=expa]')||{}).value||TODAY;expd=day;buildAttXlsx(day);msg=''}else if(x=='all'){const ds=Object.keys(att).sort();if(!ds.length)msg='There are no attendance dates yet.';else{const logs=await logsFor(ds[0],ds[ds.length-1]);for(const dd of ds){await buildXlsx(dd,logs);await new Promise(r=>setTimeout(r,500))}msg=''}}
 }catch(err){msg='Could not make the Excel file: '+(err.message||err)}
 draw(1)});
 /* ===================== Sign-in, accounts, files and exports ===================== */
@@ -1305,5 +1305,7 @@ else if(kind=='rejected'){to([pe],'Your parts request '+it+' was not approved by
 else if(kind=='delegated'){to([byId(r.ordBy)],who+' gave you '+it+' ('+amt+') to order. Open Orders to order it.')}
 else if(kind=='ordered'){to([pe],'Your parts request '+it+' was ordered.');to(tre,'FYI: '+it+' ('+amt+') was ordered by '+who+'.');to(head,it+' was ordered by '+who+'.')}
 out.forEach(o=>notes.push({id:uidn(),to:o.to,tid:r.id,kind:'req',text:o.t.slice(0,390),note:'',at:Date.now(),read:false}))}
+
+const attExpSec=()=>`<section><h3>Attendance sheet</h3><p>A simple, colorful Excel file just for attendance. Every full name has its own cell, with green for here and red for absent, plus the exact check-in and check-out times. A second sheet shows every date side by side with each person's attendance rate.</p><div class="row"><label>Date <input type="date" id="expa2" value="${expd||TODAY}"></label><button class="sel" data-exp="att">Download attendance Excel</button></div></section>`;
 
 </script></body></html>
