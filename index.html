@@ -394,7 +394,7 @@ return `<details class="card" ${ask==d||d==k[0]?'open':''}><summary><b>${fl(d)}<
 let dsel='',dpage='',dx=3,msg='';
 const SL={done:'Done',progress:'In Progress',todo:'Not Started',blocked:'Blocked - Need Help'};
 const SC={done:'#1b7a4a',progress:'#e0a800',todo:'#8a94a6',blocked:'#d93025'};
-const dirPages=m=>{const o=[],all=m.r=='mentor'||m.ti=='Head mentor'||m.r=='core';if(all||m.ti=='Director of engineering')o.push('Engineering');if(all||m.ti=='Director of communications')o.push('Communications');if(compOK(m))o.push('Competition');return o};
+const dirPages=m=>{const o=[],all=m.r=='mentor'||m.ti=='Head mentor'||m.r=='core'||m.r=='owner';if(all||m.ti=='Director of engineering')o.push('Engineering');if(all||m.ti=='Director of communications')o.push('Communications');if(compOK(m))o.push('Competition');return o};
 const dirOK=m=>dirPages(m).length>0;
 const ago=t=>{const m=Math.round((Date.now()-t)/6e4);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' hr ago':Math.round(m/1440)+' day(s) ago'};
 const when=t=>new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
