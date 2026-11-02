@@ -853,7 +853,7 @@ return wkShell(`<div class="w-hero" style="--c1:${THEMES.navy}"><div class="w-hi
    from the database and writes only what changed. Snapshots from the database replace the lists. */
 const san=(o,ex=['body'])=>JSON.parse(JSON.stringify(o),(k,v)=>typeof v=='string'&&!ex.includes(k)?v.replace(/[<>]/g,''):v);
 const cl=o=>JSON.parse(JSON.stringify(o)),okUrl=u=>/^https?:\/\//i.test(u||'');
-const F={users:['n','r','ti','t','g','lim','added','mustChange','layout','fo','dash'],tasks:['t','x','who','s','d','due','lc','did','didOn','plan','files','toHead','desc','by'],reqs:['kind','sub','item','vendor','qty','unit','icost','taxp','tax','ship','link','cost','prio','orderBy','needBy','note','info','by','status','ordBy'],events:['date','title','time','plan','by'],notes:['to','tid','kind','text','note','at','read'],log:['at','by','text','tid'],wins:['at','text','toHead','t','by'],wiki:['title','cat','sub','theme','ua','by','at','removed','body','eby','eat','n'],wrev:['page','text','ua','by','at','note']};
+const F={users:['n','r','ti','t','g','lim','added','mustChange','layout','fo','dash'],tasks:['t','x','who','s','d','due','lc','did','didOn','plan','files','toHead','desc','by','cad'],reqs:['kind','sub','item','vendor','qty','unit','icost','taxp','tax','ship','link','cost','prio','orderBy','needBy','note','info','by','status','ordBy'],events:['date','title','time','plan','by'],notes:['to','tid','kind','text','note','at','read'],log:['at','by','text','tid'],wins:['at','text','toHead','t','by'],wiki:['title','cat','sub','theme','ua','by','at','removed','body','eby','eat','n'],wrev:['page','text','ua','by','at','note']};
 const ARR=['votes','present'];
 let season=[],sCfg={},seasonOpen=false,dashEdit=false;
 const seasonMap=()=>{const m={},c={};if(sCfg.kickoff!==undefined)c.kickoff=sCfg.kickoff;if(sCfg.end!==undefined)c.end=sCfg.end;['c1n','c1d','c2n','c2d','c3n','c3d'].forEach(k=>{if(sCfg[k]!==undefined)c[k]=sCfg[k]});if(Object.keys(c).length)m.cfg=c;season.forEach(i=>{m[i.id]={date:i.date,title:i.title,note:i.note||'',cat:i.cat||'Other'}});return m};
@@ -1349,7 +1349,8 @@ const cadTab=n=>n+' CAD';
 const cadMine=m=>cad.filter(s=>(s.mem||[]).includes(m.id)).sort((a,b)=>a.name.localeCompare(b.name));
 const cadClean=s=>String(s||'').replace(/[^A-Za-z0-9 \-.()+#]/g,'').replace(/\s+/g,' ').trim().replace(/\s*CAD$/i,'').trim().slice(0,30);
 const cadPeople=s=>(s.mem||[]).map(i=>byId(i)).filter(Boolean);
-const cadTasks=s=>tasks.filter(k=>(s.mem||[]).includes(k.who));
+const cadTasks=s=>tasks.filter(k=>k.cad==s.id);
+const cadAll=()=>tasks.filter(k=>k.cad&&cad.some(s=>s.id==k.cad));
 const dleft=d=>d?Math.round((new Date(d+'T12:00:00')-new Date(TODAY+'T12:00:00'))/864e5):null;
 const dlChip=d=>{if(!d)return '<span class="b">No deadline yet</span>';const n=dleft(d);return `<span class="b ${n<0?'':n<=3?'s-progress':'s-done'}">Deadline ${fd(d)}${n>0?': '+n+' day'+(n==1?'':'s')+' left':n==0?': today':': passed'}</span>`};
 let cx={open:'',add:false,name:'',del:'',pick:{},q:{},cas:{},ms:{t:'',d:'',n:''}};
@@ -1379,11 +1380,11 @@ ${ed?`<div class="dbform" style="flex-direction:column;align-items:stretch;gap:8
 ${ed?(cx.del==s.id?`<p>Delete the whole ${esc(s.name)} CAD group? Its page disappears for everyone in it. <button data-cxdok="${s.id}">Yes, delete it</button> <button data-cxdx>Keep it</button></p>`:`<p><button data-cxdel="${s.id}">Delete this subsystem</button></p>`):''}</section>`}
 function vCap(){const m=me();if(!capOK(m))return '<h2>Captains view</h2><p class="mut">This page is not available to you.</p>';const ed=cadCap(m);
 if(cx.open){const s=cad.find(x=>x.id==cx.open);if(s)return `<h2>Captains view: ${esc(s.name)} CAD</h2><p><button data-cxback>Back to all subsystems</button></p>`+cadView(s,m,1);cx.open=''}
-const ids=[...new Set(cad.flatMap(s=>s.mem||[]))],all=tasks.filter(k=>ids.includes(k.who));
-return `<h2>Captains view: CAD</h2>${ed?'':'<p><span class="b">View only</span></p>'}<p class="mut">The numbers below cover everyone in a CAD subsystem group.</p>${cadTiles(all)}
+const all=cadAll();
+return `<h2>Captains view: CAD</h2>${ed?'':'<p><span class="b">View only</span></p>'}<p class="mut">The numbers below cover the tasks you assigned from this page.</p>${cadTiles(all)}
 <section><div class="row"><div><h3 style="margin:0">Subsystems</h3><span class="mut">${cad.length} group${cad.length==1?'':'s'}</span></div>${ed?`<button class="sel" data-cxnew aria-label="Add a subsystem">+ Add subsystem</button>`:''}</div>${cx.add&&ed?`<div class="row" style="justify-content:flex-start"><input data-cxname placeholder="Subsystem name, like Intake" maxlength="30" value="${esc(cx.name)}"><button class="sel" data-cxmk>Create</button><button data-cxnew>Cancel</button></div>`:''}</section>
 ${cad.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>cxWidget(s,ed)).join('')||'<p class="mut">No subsystems yet.'+(ed?' Press + Add subsystem to make the first one.':'')+'</p>'}`}
-function vCadInfo(){const m=me(),ed=cadCap(m),subs=cad.slice().sort((a,b)=>a.name.localeCompare(b.name)),ids=[...new Set(subs.flatMap(s=>s.mem||[]))],tk=tasks.filter(k=>ids.includes(k.who)),dn=tk.filter(k=>k.s=='done'),pct=tk.length?Math.round(dn.length/tk.length*100):0;
+function vCadInfo(){const m=me(),ed=cadCap(m),subs=cad.slice().sort((a,b)=>a.name.localeCompare(b.name)),ids=[...new Set(subs.flatMap(s=>s.mem||[]))],tk=cadAll(),dn=tk.filter(k=>k.s=='done'),pct=tk.length?Math.round(dn.length/tk.length*100):0;
 const evs=[];if(sCfg.kickoff)evs.push({d:sCfg.kickoff,t:'Build season kickoff',k:'kick'});compsOf().forEach(c=>evs.push({d:c.d,t:c.n,k:'comp'}));subs.forEach(s=>{if(s.due)evs.push({d:s.due,t:s.name+' CAD deadline',k:'dl'})});cadms.forEach(x=>evs.push({d:x.date,t:x.title,n:x.note,k:'ms',id:x.id}));
 evs.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);const rel=d=>{const n=dleft(d);return n==0?'today':n>0?'in '+n+' day'+(n==1?'':'s'):Math.abs(n)+' day'+(n==-1?'':'s')+' ago'};
 let tl='',put=false;const tdy=`<div class="tli now"><i class="tld k-now"></i><div><b>Today</b> <span class="mut">${fd(TODAY)}</span></div></div>`;
@@ -1421,7 +1422,7 @@ if('cxmadd' in d){const s=S(d.cxmadd),w=cx.pick[d.cxmadd],p=byId(w);if(s&&p&&!is
 if('cxmrm' in d){const[si,pi]=d.cxmrm.split(':'),s=S(si);if(s){s.mem=(s.mem||[]).filter(x=>x!=pi);ev('Removed '+nameOf(pi)+' from the '+s.name+' CAD group')}render();return}
 if('cxtask' in d){const s=S(d.cxtask),c=cx.cas[d.cxtask]||{},p=byId(c.w),t=(c.t||'').trim();if(!s)return;
 if(!t){msg='Type what the task is.';draw(1);return}if(!p||!(s.mem||[]).includes(p.id)||!can(m,p)){msg='Choose someone in this group.';draw(1);return}
-const st=Object.keys(SL).includes(c.s)?c.s:'todo',kk=K(secOf(p)||'Mechanical',t.slice(0,120),p.id,st,0,'');kk.due=c.due||'';kk.by=real;kk.desc=(c.d||'').trim().slice(0,900);tasks.push(kk);ev('Assigned "'+kk.x+'" to '+p.n,kk);cx.cas[s.id]={s:'todo'};okmsg='Task assigned to '+p.n+'.';render();return}
+const st=Object.keys(SL).includes(c.s)?c.s:'todo',kk=K(secOf(p)||'Mechanical',t.slice(0,120),p.id,st,0,'');kk.due=c.due||'';kk.by=real;kk.cad=s.id;kk.desc=(c.d||'').trim().slice(0,900);tasks.push(kk);ev('Assigned "'+kk.x+'" to '+p.n,kk);cx.cas[s.id]={s:'todo'};okmsg='Task assigned to '+p.n+'.';render();return}
 if('cxqadd' in d){const s=S(d.cxqadd),q=cx.q[d.cxqadd]||{t:'one'},txt=(q.q||'').trim();if(!s)return;if(!txt){msg='Type the question.';draw(1);return}
 const ty=['one','many','text'].includes(q.t)?q.t:'one',o=ty=='text'?[]:[...new Set(String(q.o||'').split(/\n|,/).map(x=>x.trim().slice(0,60)).filter(Boolean))].slice(0,8);if(ty!='text'&&o.length<2){msg='Give at least two answers, one per line.';draw(1);return}
 s.qs=[...(s.qs||[]),{id:uidn(),q:txt.slice(0,200),t:ty,o}];ev('Added a question to the '+s.name+' CAD group');cx.q[s.id]={t:ty};render();return}
