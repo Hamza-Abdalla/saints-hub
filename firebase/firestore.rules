@@ -1,0 +1,393 @@
+rules_version = '2';
+// Saints 1899 Team Hub - database rules.
+// Every action is checked here on Google's servers, not only on the page.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function uref(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function me() { return get(uref(request.auth.uid)).data; }
+    function signed() { return request.auth != null && exists(uref(request.auth.uid)); }
+    function isOwner() { return signed() && me().r == 'owner'; }
+    function isMentor(u) { return u.r == 'mentor' || u.get('ti', '') == 'Head mentor'; }
+    function staff() { return signed() && me().r in ['owner','mentor','core','admin','lead','captain']; }
+    function subs(g) { return g == 'eng' ? ['Mechanical','Electrical','Programming'] : ['Business','Imagery']; }
+    function sections() { return ['Mechanical','Electrical','Programming','Business','Imagery','Captains','Admin','Mentors']; }
+    function okId(id) { return id.matches('[a-z0-9]{4,24}'); }
+    function sEditor() { return me().get('ti', '') == 'Director of engineering'; }
+    // Used only by the owner's "Erase all data" button. Needs the owner to have typed their PIN within the last 3 minutes.
+    function wipeOK() { return isOwner() && request.time.toMillis() - request.auth.token.auth_time * 1000 < 180000; }
+    function okDay(d) { return d.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}'); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function myName() { return me().n; }
+    // Your own name only. Owners are allowed to act as someone else.
+    function nameOK(v) { return me().r == 'owner' || v == myName(); }
+    function uidOK(v) { return me().r == 'owner' || v == request.auth.uid; }
+    // Directors are found by title, so no names are needed here.
+    function isDirFor(kind) { return me().get('ti', '') == (kind == 'eng' ? 'Director of engineering' : 'Director of communications'); }
+    function okLink(l) { return l is string && l.size() < 500 && (l == '' || l.matches('https?://.*')); }
+    function reqOK(d) {
+      return d.kind in ['eng','comm'] && d.prio in ['High','Medium','Low']
+        && d.cost is number && d.cost > 0 && d.cost < 100000
+        && d.sub in ['Mechanical','Electrical','Programming','Business','Imagery']
+        && d.item is string && d.item.size() > 0 && d.item.size() < 200
+        && d.link is string && d.link.matches('https?://.*') && d.link.size() < 500
+        && d.vendor is string && d.vendor.size() > 0 && d.vendor.size() < 100
+        && d.qty is int && d.qty >= 1 && d.qty < 100000
+        && d.unit is number && d.unit > 0 && d.unit < 100000
+        && d.icost is number && d.icost > 0 && d.icost < 100000
+        && d.tax is number && d.tax >= 0 && d.tax < 100000
+        && d.taxp is number && d.taxp >= 0 && d.taxp <= 30
+        && d.ship is number && d.ship >= 0 && d.ship < 100000
+        && d.note is string && d.note.size() > 0 && d.note.size() < 500
+        && d.get('info', '') is string && d.get('info', '').size() < 600;
+    }
+
+    // Can person a (id aUid) assign tasks to person b?
+    function can(a, aUid, b, bUid) {
+      return a.get('lim', null) != null ? b.n in a.lim
+        : aUid == bUid ? a.r in ['owner','core','admin','lead','captain']
+        : a.r == 'owner' ? true
+        : a.r == 'core' ? !(b.r == 'owner' && b.get('ti', '') != 'Head mentor')
+        : a.r == 'mentor' ? b.r in ['captain','lead','admin','core','owner']
+        : a.r == 'admin' ? (b.r == 'captain'
+            || (b.r in ['lead','member'] && b.t in subs(a.g))
+            || (a.ti == 'Director of engineering' && b.get('ti', '').matches('.*Engineering mentor.*'))
+            || (a.ti == 'Director of communications' && isMentor(b)))
+        : a.r == 'lead' ? (b.r == 'captain' || (b.r == 'member' && b.t == a.t))
+        : a.r == 'captain' ? b.r in ['member','captain']
+        : false;
+    }
+    // Can person m add tasks to section s?
+    function addOK(m, s) {
+      return m.get('lim', null) != null ? s == 'Admin'
+        : s == 'Mentors'
+          ? (m.r in ['owner','core'] || (m.r == 'admin' && m.ti in ['Director of engineering','Director of communications']))
+          : (m.r in ['owner','core','mentor']
+              || (m.r == 'admin' && (s in subs(m.g) || s == 'Captains'))
+              || (m.r == 'lead' && (s == m.t || s == 'Captains'))
+              || (m.r == 'captain' && s in ['Mechanical','Electrical','Programming','Business','Imagery','Captains']));
+    }
+
+    // ---------- people ----------
+    match /users/{uid} {
+      allow read: if signed();
+      allow create: if signed()
+        && request.resource.data.keys().hasOnly(['n','r','ti','t','g','lim','added','mustChange'])
+        && request.resource.data.r in ['member','lead','captain','mentor','core','admin','owner']
+        && request.resource.data.t in ['','Mechanical','Electrical','Programming','Business','Imagery']
+        && request.resource.data.g in ['','eng','comm']
+        && request.resource.data.n is string && request.resource.data.n.size() > 0 && request.resource.data.n.size() < 80
+        && request.resource.data.ti is string && request.resource.data.ti.size() < 60
+        && (request.resource.data.lim == null || request.resource.data.lim is list)
+        && (me().r == 'owner'
+            || (me().r == 'mentor' && request.resource.data.r in ['member','lead','captain','mentor','admin'])
+            || (me().r == 'core' && request.resource.data.r in ['member','lead','captain']));
+      allow update: if signed() && (me().r == 'owner'
+        || (uid == request.auth.uid && changed().hasOnly(['mustChange','layout','fo','dash'])
+            && request.resource.data.get('layout', '').size() < 2000
+            && request.resource.data.get('fo', '').size() < 40
+            && request.resource.data.get('dash', []).size() < 20));
+      allow delete: if wipeOK();
+    }
+
+    // ---------- tasks ----------
+    // Easy usernames. Anyone can look one up by exact name (needed before sign-in); it only reveals the login name, never a person's name.
+    match /usernames/{alias} {
+      allow get: if true;
+      allow list: if signed() && (isOwner() || resource.data.uid == request.auth.uid);
+      allow create: if signed() && alias.matches('[a-z0-9-]{4,20}') && !alias.matches('saint.*')
+        && request.resource.data.keys().hasOnly(['u','uid'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.u == request.auth.token.email.split('@')[0];
+      allow delete: if signed() && (resource.data.uid == request.auth.uid || isOwner());
+    }
+
+    // ---------- competition planning ----------
+    // Directors of competition, core admin, mentors and owners only.
+    function compOK() { return signed() && (me().r in ['owner','core','mentor'] || (me().r == 'admin' && me().get('ti', '') == 'Director of competition')); }
+    // Only directors of competition (and owners other than the head mentor) can change the competition page.
+    function compEdit() { return signed() && ((me().r == 'admin' && me().get('ti', '') == 'Director of competition') || (me().r == 'owner' && me().get('ti', '') != 'Head mentor')); }
+    match /comp/{id} {
+      allow read: if compOK();
+      allow create, update: if compEdit() && okId(id)
+        && request.resource.data.keys().hasOnly(['cat','title','body','by','at','eat','done'])
+        && request.resource.data.cat in ['Planning','Safety','Checklist','Logistics','Contacts']
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() < 130
+        && request.resource.data.get('body', '') is string && request.resource.data.get('body', '').size() < 3000
+        && request.resource.data.by is string && request.resource.data.by.size() < 80;
+      allow delete: if compEdit() || wipeOK();
+    }
+
+    // ---------- CAD subsystems ----------
+    // The CAD captain (and owners) make subsystems, add people, set the deadline and ask questions.
+    // Anyone signed in can read them, because the General CAD Info page is for the whole team.
+    // A person in a subsystem can change only their own answers.
+    function cadCap() { return signed() && (me().r == 'owner' || (me().r == 'captain' && me().get('ti', '') == 'CAD captain')); }
+    match /cadsub/{id} {
+      allow read: if signed();
+      allow create, update: if cadCap() && okId(id)
+        && request.resource.data.keys().hasOnly(['name','due','mem','qs','ans'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 41
+        && request.resource.data.due is string && request.resource.data.due.size() < 11
+        && request.resource.data.mem is list && request.resource.data.mem.size() < 60
+        && request.resource.data.qs is list && request.resource.data.qs.size() < 21;
+      allow update: if signed() && request.auth.uid in resource.data.mem
+        && changed().hasOnly(['ans'])
+        && request.resource.data.ans.diff(resource.data.get('ans', {})).affectedKeys().hasOnly([request.auth.uid]);
+      allow delete: if cadCap() || wipeOK();
+    }
+    match /cadms/{id} {
+      allow read: if signed();
+      allow create, update: if cadCap() && okId(id)
+        && request.resource.data.keys().hasOnly(['title','date','note'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() < 100
+        && request.resource.data.note is string && request.resource.data.note.size() < 300
+        && okDay(request.resource.data.date);
+      allow delete: if cadCap() || wipeOK();
+    }
+
+    match /tasks/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['t','x','who','s','d','due','lc','did','didOn','plan','toHead','desc','by','helpMap','files','cad'])
+        && request.resource.data.t in sections()
+        && request.resource.data.get('desc', '') is string && request.resource.data.get('desc', '').size() < 1000
+        && request.resource.data.x is string && request.resource.data.x.size() > 0 && request.resource.data.x.size() < 300
+        && addOK(me(), request.resource.data.t);
+      allow update: if signed() && (
+        me().r == 'owner'
+        // the person it is assigned to reports progress
+        || (resource.data.who == request.auth.uid
+            && changed().hasOnly(['s','d','did','didOn','plan','lc','helpMap'])
+            && request.resource.data.s in ['done','progress','todo','blocked']
+            && request.resource.data.did.size() < 2000 && request.resource.data.plan.size() < 2000)
+        // someone who may add tasks to this section assigns it, sets a due date or attaches links
+        || (addOK(me(), resource.data.t) && changed().hasOnly(['who','due','files','lc','toHead','desc'])
+            && (request.resource.data.who == null
+                || can(me(), request.auth.uid, get(uref(request.resource.data.who)).data, request.resource.data.who)))
+        // a person who was asked for help answers
+        || (request.auth.uid in resource.data.helpMap.keys() && changed().hasOnly(['helpMap','lc'])
+            && request.resource.data.helpMap.diff(resource.data.helpMap).affectedKeys().hasOnly([request.auth.uid])));
+      // The person who created a task, or an owner, can delete it.
+      allow delete: if signed() && (resource.data.get('by', '') == request.auth.uid || me().r == 'owner') || wipeOK();
+    }
+
+    // ---------- attendance ----------
+    // One document per meeting day. Only the uid saved in config/main (the head mentor) can delete one.
+    // Everyone can open today's page by name, but only staff can list the whole log.
+    match /attendance/{day} {
+      allow get: if signed();
+      allow list: if staff();
+      // Leadership, captains and above check people in. Anyone checked in can record their own check-out time.
+      allow create, update: if signed() && okDay(day) && (
+        (me().r in ['owner','mentor','core','admin','lead','captain']
+          && request.resource.data.keys().hasOnly(['present','times'])
+          && request.resource.data.present is list && request.resource.data.present.size() < 300
+          && request.resource.data.get('times', {}) is map)
+        || (request.auth.uid in resource.data.present
+          && request.resource.data.keys().hasOnly(['present','times'])
+          && request.resource.data.present == resource.data.present
+          && request.resource.data.times.diff(resource.data.get('times', {})).affectedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.times[request.auth.uid].keys().hasOnly(['i','o'])
+          && request.resource.data.times[request.auth.uid].o is number));
+      allow delete: if signed()
+        && request.auth.uid == get(/databases/$(database)/documents/config/main).data.headMentorUid;
+      allow delete: if wipeOK();
+    }
+
+    // ---------- settings ----------
+    match /config/{doc} {
+      allow read: if signed();
+      allow create: if isOwner() && doc == 'main'
+        && request.resource.data.keys().hasOnly(['rule','idle','headMentorUid','seasonOpen'])
+        && request.resource.data.get('rule', 2) in [1,2,3,4,5]
+        && request.resource.data.get('idle', 15) in [5,10,15,30];
+      // Owners change anything here. A core admin can only flip the build season lock.
+      allow update: if doc == 'main' && (
+        (isOwner()
+          && request.resource.data.keys().hasOnly(['rule','idle','headMentorUid','seasonOpen'])
+          && request.resource.data.get('rule', 2) in [1,2,3,4,5]
+          && request.resource.data.get('idle', 15) in [5,10,15,30])
+        || (signed() && (me().r == 'core' || me().get('ti', '') == 'Director of engineering') && changed().hasOnly(['seasonOpen'])
+          && request.resource.data.seasonOpen is bool));
+      allow delete: if false;
+    }
+
+    // ---------- build season calendar ----------
+    // Members cannot read it until a core admin unlocks it. Only directors of engineering edit it.
+    match /season/{id} {
+      allow read: if signed() && (me().r != 'member'
+        || get(/databases/$(database)/documents/config/main).data.get('seasonOpen', false) == true);
+      allow create, update: if signed() && sEditor() && (
+        (id == 'cfg' && request.resource.data.keys().hasOnly(['kickoff','end','c1n','c1d','c2n','c2d','c3n','c3d'])
+            && request.resource.data.get('c1n', '').size() < 41 && request.resource.data.get('c2n', '').size() < 41 && request.resource.data.get('c3n', '').size() < 41)
+        || (okId(id) && request.resource.data.keys().hasOnly(['date','title','note','cat'])
+            && request.resource.data.title is string && request.resource.data.title.size() < 130
+            && request.resource.data.note is string && request.resource.data.note.size() < 220
+            && okDay(request.resource.data.date)));
+      allow delete: if (signed() && sEditor() && id != 'cfg') || wipeOK();
+    }
+
+    // ---------- change history: add only, never edited or deleted ----------
+    // Members and captains cannot read it. The "by" name must start with your own name.
+    match /log/{id} {
+      allow read: if signed() && me().r != 'member';
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['at','by','text','tid'])
+        && request.resource.data.text is string && request.resource.data.text.size() < 400
+        && request.resource.data.by is string
+        && (me().r == 'owner' || request.resource.data.by == myName());
+      allow update: if false;
+      allow delete: if wipeOK();
+    }
+
+    // ---------- parts requests ----------
+    match /reqs/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id) && me().r != 'mentor' && reqOK(request.resource.data)
+        && request.resource.data.keys().hasOnly(['kind','sub','item','vendor','qty','unit','icost','taxp','tax','ship','link','cost','prio','orderBy','needBy','note','info','by','status'])
+        && request.resource.data.by == request.auth.uid && request.resource.data.status == 'pending';
+      allow update: if signed() && (
+        me().r == 'owner'
+        // a director approves or declines a pending request
+        || (resource.data.status == 'pending' && changed().hasOnly(['status'])
+            && request.resource.data.status in ['approved','rejected'] && isDirFor(resource.data.kind))
+        // the head mentor orders it herself or hands it to a core admin or mentor
+        || (resource.data.status == 'approved' && changed().hasOnly(['status','ordBy'])
+            && me().get('ti', '') == 'Head mentor'
+            && (request.resource.data.status == 'ordered'
+                || (request.resource.data.status == 'delegated'
+                    && (get(uref(request.resource.data.ordBy)).data.r == 'mentor'
+                        || get(uref(request.resource.data.ordBy)).data.get('ti', '') in ['Head mentor','Treasurer']))))
+        // the person it was handed to marks it in progress or ordered. Nobody else can change it after that.
+        || (resource.data.status in ['delegated','inprogress'] && resource.data.ordBy == request.auth.uid
+            && changed().hasOnly(['status']) && request.resource.data.status in ['inprogress','ordered'])
+        // the person who asked can edit or withdraw it until a director approves it
+        || (resource.data.by == request.auth.uid && resource.data.status == 'pending'
+            && request.resource.data.status in ['pending','withdrawn']
+            && changed().hasOnly(['status','kind','sub','item','vendor','qty','unit','icost','taxp','tax','ship','link','cost','prio','orderBy','needBy','note','info'])
+            && reqOK(request.resource.data))
+        // a director can edit any request of theirs that is not ordered yet
+        || (isDirFor(resource.data.kind) && resource.data.status in ['pending','approved']
+            && changed().hasOnly(['kind','sub','item','vendor','qty','unit','icost','taxp','tax','ship','link','cost','prio','orderBy','needBy','note','info'])
+            && reqOK(request.resource.data)));
+      allow delete: if wipeOK();
+    }
+
+    // ---------- calendar ----------
+    match /days/{d} {
+      allow read: if signed();
+      allow delete: if wipeOK();
+      allow create, update: if signed() && okDay(d) && (isMentor(me()) || me().r in ['core','owner'])
+        && request.resource.data.keys().hasOnly(['s','hol']);
+    }
+    match /avail/{d} {
+      allow read: if signed();
+      allow delete: if wipeOK();
+      allow create, update: if signed() && okDay(d) && (isMentor(me()) || me().r == 'owner');
+    }
+    match /events/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id) && me().r in ['captain','lead','admin','core','owner','mentor']
+        && request.resource.data.keys().hasOnly(['date','title','time','plan','by'])
+        && request.resource.data.title is string && request.resource.data.title.size() < 120
+        && request.resource.data.plan is string && request.resource.data.plan.size() < 1000
+        && nameOK(request.resource.data.by);
+      allow update: if false;
+      allow delete: if wipeOK();
+    }
+
+    // ---------- help requests and replies ----------
+    // Only the person it is for can read it.
+    match /notes/{id} {
+      allow read: if signed() && (resource.data.to == request.auth.uid || wipeOK());
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['to','tid','kind','text','note','at','read'])
+        && request.resource.data.kind in ['help','reply','req']
+        && request.resource.data.text is string && request.resource.data.text.size() < 400
+        && request.resource.data.note is string && request.resource.data.note.size() < 500
+        && exists(uref(request.resource.data.to));
+      allow update: if signed() && (resource.data.to == request.auth.uid || me().r == 'owner')
+        && changed().hasOnly(['read']);
+      allow delete: if signed() && (resource.data.to == request.auth.uid || me().r == 'owner');
+    }
+
+    // ---------- retrospective ----------
+    match /retro/{doc} {
+      allow read: if signed();
+      allow delete: if wipeOK();
+      allow create, update: if signed() && (me().r in ['core','owner']
+        || (resource.data.editor == request.auth.uid && changed().hasOnly(['lock','editor'])));
+    }
+    // Items hold no author. Action items hold the name of who wrote them.
+    match /ritems/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['type','round','text','sub','votes','by','done','carried','claim','did','didOn'])
+        && request.resource.data.text is string && request.resource.data.text.size() < 500
+        && ((request.resource.data.type in ['k','a','f'] && request.resource.data.by == '')
+          || me().r in ['core','owner']
+          || (request.resource.data.type == 'ai'
+              && get(/databases/$(database)/documents/retro/meta).data.lock == false
+              && get(/databases/$(database)/documents/retro/meta).data.editor == request.auth.uid));
+      allow update: if signed() && (changed().hasOnly(['votes'])
+        || (changed().hasOnly(['done']) && (isMentor(me()) || me().r in ['core','owner']))
+        // the person who claimed an action item posts a daily update
+        || (changed().hasOnly(['did','didOn']) && resource.data.type == 'ai' && resource.data.get('claim', '') == request.auth.uid
+            && request.resource.data.did is string && request.resource.data.did.size() < 1000)
+        // anyone can claim an unclaimed action item, or release their own claim
+        || (changed().hasOnly(['claim']) && resource.data.type == 'ai'
+            && ((request.resource.data.claim == request.auth.uid && resource.data.get('claim', '') == '')
+                || (request.resource.data.claim == '' && resource.data.get('claim', '') == request.auth.uid))));
+      allow delete: if wipeOK();
+    }
+    match /rounds/{id} {
+      allow read: if signed();
+      allow create: if signed() && me().r in ['core','owner'];
+      allow update: if false;
+      allow delete: if wipeOK();
+    }
+
+    // ---------- accomplishments on the dashboard ----------
+    match /wins/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['at','text','toHead','t','by'])
+        && request.resource.data.text is string && request.resource.data.text.size() < 300
+        && uidOK(request.resource.data.by);
+      allow update: if false;
+      allow delete: if wipeOK();
+    }
+
+    // ---------- wiki ----------
+    // Anyone can start a page or improve one. Only admins, core admins and owners rename, take down and restore.
+    match /wiki/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['title','cat','sub','theme','ua','by','at','removed','body','eby','eat','n'])
+        && request.resource.data.get('sub', '') is string && request.resource.data.get('sub', '').size() < 41
+        && request.resource.data.title is string && request.resource.data.title.size() < 120
+        && request.resource.data.body is string && request.resource.data.body.size() < 20000
+        && request.resource.data.removed == false
+        && uidOK(request.resource.data.ua) && nameOK(request.resource.data.by);
+      allow update: if signed() && (me().r in ['owner','admin','core']
+        || (resource.data.removed == false
+            && changed().hasOnly(['body','cat','sub','theme','eby','eat','n'])
+            && request.resource.data.get('sub', '') is string && request.resource.data.get('sub', '').size() < 41
+            && request.resource.data.body is string && request.resource.data.body.size() < 20000
+            && nameOK(request.resource.data.eby)));
+      allow delete: if wipeOK();
+    }
+    // Every version of every page. Add only. Nobody can erase history.
+    match /wrev/{id} {
+      allow read: if signed();
+      allow create: if signed() && okId(id)
+        && request.resource.data.keys().hasOnly(['page','text','ua','by','at','note'])
+        && request.resource.data.text is string && request.resource.data.text.size() < 20000
+        && uidOK(request.resource.data.ua) && nameOK(request.resource.data.by);
+      allow update: if false;
+      allow delete: if wipeOK();
+    }
+  }
+}

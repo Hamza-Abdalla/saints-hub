@@ -1,0 +1,4 @@
+dist/
+node_modules/
+# Names live only in Firebase. Never commit rosters.
+roster*.json
